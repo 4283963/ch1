@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.smartpark.mapper.ParkingSpaceMapper">
+
+    <resultMap id="ParkingSpaceMap" type="com.smartpark.entity.ParkingSpace">
+        <id column="id" property="id"/>
+        <result column="space_code" property="spaceCode"/>
+        <result column="area" property="area"/>
+        <result column="floor" property="floor"/>
+        <result column="status" property="status"/>
+        <result column="x_pos" property="xPos"/>
+        <result column="y_pos" property="yPos"/>
+        <result column="width" property="width"/>
+        <result column="height" property="height"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.smartpark.entity.ParkingSpace" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO parking_space (space_code, area, floor, status, x_pos, y_pos, width, height)
+        VALUES (#{spaceCode}, #{area}, #{floor}, #{status}, #{xPos}, #{yPos}, #{width}, #{height})
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM parking_space WHERE id = #{id}
+    </delete>
+
+    <update id="update" parameterType="com.smartpark.entity.ParkingSpace">
+        UPDATE parking_space
+        <set>
+            <if test="spaceCode != null">space_code = #{spaceCode},</if>
+            <if test="area != null">area = #{area},</if>
+            <if test="floor != null">floor = #{floor},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="xPos != null">x_pos = #{xPos},</if>
+            <if test="yPos != null">y_pos = #{yPos},</if>
+            <if test="width != null">width = #{width},</if>
+            <if test="height != null">height = #{height},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectById" resultMap="ParkingSpaceMap">
+        SELECT * FROM parking_space WHERE id = #{id}
+    </select>
+
+    <select id="selectAll" resultMap="ParkingSpaceMap">
+        SELECT * FROM parking_space ORDER BY space_code
+    </select>
+
+    <update id="updateStatus">
+        UPDATE parking_space SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <select id="selectBySpaceCode" resultMap="ParkingSpaceMap">
+        SELECT * FROM parking_space WHERE space_code = #{spaceCode}
+    </select>
+
+</mapper>

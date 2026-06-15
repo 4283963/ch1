@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.smartpark.mapper.AccessRecordMapper">
+
+    <resultMap id="AccessRecordMap" type="com.smartpark.entity.AccessRecord">
+        <id column="id" property="id"/>
+        <result column="plate_number" property="plateNumber"/>
+        <result column="space_id" property="spaceId"/>
+        <result column="event_type" property="eventType"/>
+        <result column="event_time" property="eventTime"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.smartpark.entity.AccessRecord" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO access_record (plate_number, space_id, event_type)
+        VALUES (#{plateNumber}, #{spaceId}, #{eventType})
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM access_record WHERE id = #{id}
+    </delete>
+
+    <select id="selectById" resultMap="AccessRecordMap">
+        SELECT * FROM access_record WHERE id = #{id}
+    </select>
+
+    <select id="selectAll" resultMap="AccessRecordMap">
+        SELECT * FROM access_record ORDER BY event_time DESC
+    </select>
+
+    <select id="selectByPlateNumber" resultMap="AccessRecordMap">
+        SELECT * FROM access_record WHERE plate_number = #{plateNumber} ORDER BY event_time DESC
+    </select>
+
+    <select id="selectBySpaceId" resultMap="AccessRecordMap">
+        SELECT * FROM access_record WHERE space_id = #{spaceId} ORDER BY event_time DESC
+    </select>
+
+</mapper>

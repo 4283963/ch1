@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.smartpark.mapper.PlateWhitelistMapper">
+
+    <resultMap id="PlateWhitelistMap" type="com.smartpark.entity.PlateWhitelist">
+        <id column="id" property="id"/>
+        <result column="plate_number" property="plateNumber"/>
+        <result column="owner_id" property="ownerId"/>
+        <result column="space_id" property="spaceId"/>
+        <result column="is_active" property="isActive"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.smartpark.entity.PlateWhitelist" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO plate_whitelist (plate_number, owner_id, space_id, is_active)
+        VALUES (#{plateNumber}, #{ownerId}, #{spaceId}, #{isActive})
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM plate_whitelist WHERE id = #{id}
+    </delete>
+
+    <update id="update" parameterType="com.smartpark.entity.PlateWhitelist">
+        UPDATE plate_whitelist
+        <set>
+            <if test="plateNumber != null">plate_number = #{plateNumber},</if>
+            <if test="ownerId != null">owner_id = #{ownerId},</if>
+            <if test="spaceId != null">space_id = #{spaceId},</if>
+            <if test="isActive != null">is_active = #{isActive},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectById" resultMap="PlateWhitelistMap">
+        SELECT * FROM plate_whitelist WHERE id = #{id}
+    </select>
+
+    <select id="selectAll" resultMap="PlateWhitelistMap">
+        SELECT * FROM plate_whitelist ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByPlateNumber" resultMap="PlateWhitelistMap">
+        SELECT * FROM plate_whitelist WHERE plate_number = #{plateNumber} AND is_active = 1
+    </select>
+
+    <select id="selectWhitelistWithDetail" resultType="java.util.Map">
+        SELECT
+            pw.id,
+            pw.plate_number AS plateNumber,
+            pw.owner_id AS ownerId,
+            pw.space_id AS spaceId,
+            pw.is_active AS isActive,
+            o.name AS ownerName,
+            o.phone AS ownerPhone,
+            ps.space_code AS spaceCode,
+            ps.status AS spaceStatus
+        FROM plate_whitelist pw
+        LEFT JOIN owner o ON pw.owner_id = o.id
+        LEFT JOIN parking_space ps ON pw.space_id = ps.id
+        <where>
+            <if test="plateNumber != null and plateNumber != ''">
+                AND pw.plate_number = #{plateNumber}
+            </if>
+        </where>
+        ORDER BY pw.create_time DESC
+    </select>
+
+    <update id="updateActive">
+        UPDATE plate_whitelist SET is_active = #{isActive} WHERE id = #{id}
+    </update>
+
+</mapper>
