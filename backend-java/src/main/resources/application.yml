@@ -23,3 +23,9 @@ mybatis:
 go:
   gateway:
     url: http://localhost:8080
+
+speaker:
+  enabled: true
+  base-url: http://localhost:8080
+  timeout-ms: 3000
+  template: "请{ownerName}业主前往{area}{spaceCode}车位停车"

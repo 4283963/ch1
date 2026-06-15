@@ -12,7 +12,8 @@ CREATE TABLE parking_space (
     x_pos INT DEFAULT 0,
     y_pos INT DEFAULT 0,
     width INT DEFAULT 100,
-    height INT DEFAULT 60
+    height INT DEFAULT 60,
+    speaker_id VARCHAR(100) COMMENT '大门播报喇叭ID'
 );
 
 CREATE TABLE owner (
@@ -41,15 +42,15 @@ CREATE TABLE access_record (
     event_time DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO parking_space (space_code, area, floor, status, x_pos, y_pos, width, height) VALUES
-('P001', 'A区', 1, 0, 50, 50, 100, 60),
-('P002', 'A区', 1, 0, 180, 50, 100, 60),
-('P003', 'A区', 1, 0, 310, 50, 100, 60),
-('P004', 'A区', 1, 0, 440, 50, 100, 60),
-('P005', 'B区', 1, 0, 50, 150, 100, 60),
-('P006', 'B区', 1, 0, 180, 150, 100, 60),
-('P007', 'B区', 1, 0, 310, 150, 100, 60),
-('P008', 'B区', 1, 0, 440, 150, 100, 60);
+INSERT INTO parking_space (space_code, area, floor, status, x_pos, y_pos, width, height, speaker_id) VALUES
+('P001', 'A区', 1, 0, 50, 50, 100, 60, 'SPK-MAIN-01'),
+('P002', 'A区', 1, 0, 180, 50, 100, 60, 'SPK-MAIN-01'),
+('P003', 'A区', 1, 0, 310, 50, 100, 60, 'SPK-MAIN-02'),
+('P004', 'A区', 1, 0, 440, 50, 100, 60, 'SPK-MAIN-02'),
+('P005', 'B区', 1, 0, 50, 150, 100, 60, 'SPK-MAIN-01'),
+('P006', 'B区', 1, 0, 180, 150, 100, 60, 'SPK-MAIN-01'),
+('P007', 'B区', 1, 0, 310, 150, 100, 60, 'SPK-MAIN-02'),
+('P008', 'B区', 1, 0, 440, 150, 100, 60, 'SPK-MAIN-02');
 
 INSERT INTO owner (name, phone) VALUES
 ('张三', '13800138001'),

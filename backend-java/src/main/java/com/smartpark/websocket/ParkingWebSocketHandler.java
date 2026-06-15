@@ -50,7 +50,16 @@ public class ParkingWebSocketHandler extends TextWebSocketHandler {
 
     public void sendSpaceStatusUpdate(Long spaceId, String spaceCode, String status, String color,
                                       Integer x, Integer y, Integer width, Integer height) {
+        sendSpaceStatusUpdate(spaceId, spaceCode, status, color, x, y, width, height, null, false, null);
+    }
+
+    public void sendSpaceStatusUpdate(Long spaceId, String spaceCode, String status, String color,
+                                      Integer x, Integer y, Integer width, Integer height,
+                                      String speakerId, Boolean announcing, String announceText) {
         SpaceStatusDTO dto = new SpaceStatusDTO(spaceId, spaceCode, status, color, x, y, width, height);
+        dto.setSpeakerId(speakerId);
+        dto.setAnnouncing(announcing);
+        dto.setAnnounceText(announceText);
         String jsonMessage = JSON.toJSONString(dto);
         broadcast(jsonMessage);
     }

@@ -42,6 +42,14 @@ public class PlateWhitelistService {
         return plateWhitelistMapper.selectWhitelistWithDetail(plateNumber);
     }
 
+    public Map<String, Object> selectDetailByPlateNumber(String plateNumber) {
+        List<Map<String, Object>> list = plateWhitelistMapper.selectWhitelistWithDetail(plateNumber);
+        if (list != null && !list.isEmpty()) {
+            return list.get(0);
+        }
+        return null;
+    }
+
     public int updateActive(Long id, Integer isActive) {
         return plateWhitelistMapper.updateActive(id, isActive);
     }

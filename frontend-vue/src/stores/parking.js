@@ -21,7 +21,10 @@ const mapSpaceFromBackend = (s) => ({
   y: s.y !== undefined ? s.y : s.yPos,
   width: s.width || 100,
   height: s.height || 60,
-  color: s.color
+  color: s.color,
+  speakerId: s.speakerId,
+  announcing: s.announcing === true,
+  announceText: s.announceText
 })
 
 export const useParkingStore = defineStore('parking', {
@@ -108,6 +111,9 @@ export const useParkingStore = defineStore('parking', {
           if (rawMsg.width !== undefined) space.width = rawMsg.width
           if (rawMsg.height !== undefined) space.height = rawMsg.height
           if (rawMsg.name) space.name = rawMsg.name
+          if (rawMsg.speakerId !== undefined) space.speakerId = rawMsg.speakerId
+          if (rawMsg.announcing !== undefined) space.announcing = rawMsg.announcing
+          if (rawMsg.announceText !== undefined) space.announceText = rawMsg.announceText
         }
       }
     },

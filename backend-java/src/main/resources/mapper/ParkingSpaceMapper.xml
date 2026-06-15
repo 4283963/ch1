@@ -13,11 +13,12 @@
         <result column="y_pos" property="yPos"/>
         <result column="width" property="width"/>
         <result column="height" property="height"/>
+        <result column="speaker_id" property="speakerId"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.smartpark.entity.ParkingSpace" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO parking_space (space_code, area, floor, status, x_pos, y_pos, width, height)
-        VALUES (#{spaceCode}, #{area}, #{floor}, #{status}, #{xPos}, #{yPos}, #{width}, #{height})
+        INSERT INTO parking_space (space_code, area, floor, status, x_pos, y_pos, width, height, speaker_id)
+        VALUES (#{spaceCode}, #{area}, #{floor}, #{status}, #{xPos}, #{yPos}, #{width}, #{height}, #{speakerId})
     </insert>
 
     <delete id="deleteById">
@@ -35,6 +36,7 @@
             <if test="yPos != null">y_pos = #{yPos},</if>
             <if test="width != null">width = #{width},</if>
             <if test="height != null">height = #{height},</if>
+            <if test="speakerId != null">speaker_id = #{speakerId},</if>
         </set>
         WHERE id = #{id}
     </update>

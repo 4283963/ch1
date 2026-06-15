@@ -105,6 +105,26 @@
                     {{ space.status === 'occupied' ? '升起' : '降下' }}
                   </span>
                 </div>
+                <div class="speaker-config">
+                  <span class="label">喇叭ID：</span>
+                  <input
+                    v-model="speakerEdits[space.id]"
+                    type="text"
+                    class="form-input-sm"
+                    :placeholder="space.speakerId || '未配置'"
+                  />
+                  <button
+                    class="btn btn-primary btn-xs"
+                    @click="saveSpeakerId(space)"
+                    :disabled="savingSpeaker[space.id]"
+                  >
+                    {{ savingSpeaker[space.id] ? '保存中' : '保存' }}
+                  </button>
+                </div>
+                <div class="space-info" v-if="space.area">
+                  <span class="label">区域：</span>
+                  <span>{{ space.area }}</span>
+                </div>
               </div>
               <div class="space-actions">
                 <button class="btn btn-success btn-sm" @click="controlAnchor(space.id, 'up')" :disabled="space.status === 'occupied'">
@@ -238,7 +258,7 @@
 <script setup>
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useParkingStore } from '../stores/parking'
-import { recognizePlate as apiRecognize, addWhiteList, deleteWhiteList, getWhiteList, getRecords } from '../utils/api'
+import { recognizePlate as apiRecognize, addWhiteList, deleteWhiteList, getWhiteList, getRecords, updateSpace } from '../utils/api'
 
 const store = useParkingStore()
 
@@ -257,6 +277,9 @@ const recognizing = ref(false)
 const recognizeResult = ref(null)
 
 const quickPlates = ['京A12345', '沪B67890', '粤C24680', '浙D13579', '苏F86420']
+
+const speakerEdits = reactive({})
+const savingSpeaker = reactive({})
 
 const whiteListData = ref([
   { id: 1, plate: '京A12345', owner: '张三', phone: '138****1234', createTime: '2025-01-10 09:00:00' },
@@ -287,6 +310,25 @@ const controlAnchor = async (spaceId, action) => {
     await store.updateSpaceStatusRemote(spaceId, status)
   } catch (e) {
     console.error('操作失败', e)
+  }
+}
+
+const saveSpeakerId = async (space) => {
+  const speakerId = speakerEdits[space.id]
+  if (!speakerId) {
+    alert('请输入喇叭ID')
+    return
+  }
+  savingSpeaker[space.id] = true
+  try {
+    await updateSpace(space.id, { speakerId })
+    store.updateSpaceStatus(space.id, null, null, { speakerId })
+    alert('喇叭ID保存成功')
+  } catch (e) {
+    console.error('保存喇叭ID失败', e)
+    alert('保存失败')
+  } finally {
+    savingSpeaker[space.id] = false
   }
 }
 
@@ -800,6 +842,49 @@ onMounted(() => {
 
 .anchor-indicator.down {
   color: #6b7280;
+}
+
+.speaker-config {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.speaker-config .label {
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.speaker-config .form-input-sm {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  min-width: 0;
+}
+
+.speaker-config .form-input-sm:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.space-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.btn-xs {
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 4px;
 }
 
 .space-actions {

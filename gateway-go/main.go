@@ -283,6 +283,89 @@ type APIResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
+type AnnounceRequest struct {
+	SpeakerId string `json:"speakerId"`
+	Text      string `json:"text"`
+	Volume    int    `json:"volume"`
+	Priority  int    `json:"priority"`
+}
+
+type AnnounceHandler struct {
+	recentSpeak []map[string]interface{}
+	mu          sync.Mutex
+}
+
+func NewAnnounceHandler() *AnnounceHandler {
+	return &AnnounceHandler{
+		recentSpeak: make([]map[string]interface{}, 0, 50),
+	}
+}
+
+func (h *AnnounceHandler) HandleSpeak(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req AnnounceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: "无效的请求体: " + err.Error()})
+		return
+	}
+	defer r.Body.Close()
+
+	speakerId := strings.TrimSpace(req.SpeakerId)
+	if speakerId == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: "speakerId 不能为空"})
+		return
+	}
+	if req.Text == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: "播报文本不能为空"})
+		return
+	}
+
+	log.Printf("[播报] 喇叭 %s 音量=%d 优先级=%d 文本=%q",
+		speakerId, req.Volume, req.Priority, req.Text)
+
+	record := map[string]interface{}{
+		"speakerId": speakerId,
+		"text":      req.Text,
+		"volume":    req.Volume,
+		"priority":  req.Priority,
+		"timestamp": time.Now().Format("15:04:05"),
+		"success":   true,
+	}
+	h.mu.Lock()
+	h.recentSpeak = append([]map[string]interface{}{record}, h.recentSpeak...)
+	if len(h.recentSpeak) > 50 {
+		h.recentSpeak = h.recentSpeak[:50]
+	}
+	h.mu.Unlock()
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Message: fmt.Sprintf("喇叭 %s 播报指令已发送", speakerId),
+		Data:    record,
+	})
+}
+
+func (h *AnnounceHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	h.mu.Lock()
+	recent := make([]map[string]interface{}, len(h.recentSpeak))
+	copy(recent, h.recentSpeak)
+	h.mu.Unlock()
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"totalAnnounced": len(recent),
+			"recentRecords":  recent,
+		},
+	})
+}
+
 func (h *AnchorHandler) HandleAnchorUp(w http.ResponseWriter, r *http.Request) {
 	h.sendCommand(w, r, "UP")
 }
@@ -470,6 +553,7 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 
 func main() {
 	pool := NewAnchorPool()
+	announceHandler := NewAnnounceHandler()
 
 	tcpServer := NewTCPServer(":9000", pool)
 	go func() {
@@ -485,6 +569,10 @@ func main() {
 	apiRouter.HandleFunc("/up", handler.HandleAnchorUp).Methods("POST")
 	apiRouter.HandleFunc("/down", handler.HandleAnchorDown).Methods("POST")
 	apiRouter.HandleFunc("/status", handler.HandleAnchorStatus).Methods("GET")
+
+	announceRouter := router.PathPrefix("/api/announce").Subrouter()
+	announceRouter.HandleFunc("/speak", announceHandler.HandleSpeak).Methods("POST")
+	announceRouter.HandleFunc("/status", announceHandler.HandleStatus).Methods("GET")
 
 	httpAddr := ":8080"
 	log.Printf("[HTTP] 服务启动，监听端口 %s", httpAddr)

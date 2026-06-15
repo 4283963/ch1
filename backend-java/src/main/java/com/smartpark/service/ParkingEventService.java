@@ -41,6 +41,9 @@ public class ParkingEventService {
     @Autowired
     private ParkingWebSocketHandler parkingWebSocketHandler;
 
+    @Autowired
+    private AnnounceService announceService;
+
     private final Map<String, Boolean> vehicleInMap = new ConcurrentHashMap<>();
 
     private final Map<String, PlateProcessRecord> plateRecentRecord = new ConcurrentHashMap<>();
@@ -176,6 +179,12 @@ public class ParkingEventService {
             return result;
         }
 
+        Map<String, Object> ownerDetail = plateWhitelistService.selectDetailByPlateNumber(plateNumber);
+        String ownerName = null;
+        if (ownerDetail != null && ownerDetail.get("ownerName") != null) {
+            ownerName = String.valueOf(ownerDetail.get("ownerName"));
+        }
+
         int updated = parkingSpaceService.updateStatusWithExpect(spaceId, 2, space.getStatus());
         if (updated == 0) {
             log.warn("[进场-乐观锁] 车位 {} 状态已被其他线程修改(DB原值={})，CAS失败，回滚内存标记",
@@ -186,15 +195,20 @@ public class ParkingEventService {
             return result;
         }
 
+        String announceText = announceService.buildAnnounceText(ownerName, space.getArea(), space.getSpaceCode());
+
         String guidingColor = "#059669";
         parkingWebSocketHandler.sendSpaceStatusUpdate(spaceId, space.getSpaceCode(), "guiding", guidingColor,
-                space.getXPos(), space.getYPos(), space.getWidth(), space.getHeight());
+                space.getXPos(), space.getYPos(), space.getWidth(), space.getHeight(),
+                space.getSpeakerId(), true, announceText);
         sendEventLog(plateNumber, space.getSpaceCode(), "IN", "车辆识别，地锚下降中，引导停车");
 
         boolean downResult = goGatewayService.sendDownCommand(space.getSpaceCode());
         if (!downResult) {
             log.warn("[进场] Go网关降地锚调用失败，但继续状态流转");
         }
+
+        announceService.announceAsync(space.getSpeakerId(), announceText);
 
         try {
             Thread.sleep(1500);
@@ -206,7 +220,8 @@ public class ParkingEventService {
         parkingSpaceService.updateStatus(spaceId, 1);
         String occupiedColor = "#2563eb";
         parkingWebSocketHandler.sendSpaceStatusUpdate(spaceId, space.getSpaceCode(), "occupied", occupiedColor,
-                space.getXPos(), space.getYPos(), space.getWidth(), space.getHeight());
+                space.getXPos(), space.getYPos(), space.getWidth(), space.getHeight(),
+                space.getSpeakerId(), null, null);
         sendEventLog(plateNumber, space.getSpaceCode(), "IN", "车辆已入场，车位已占用");
 
         accessRecordService.recordIn(plateNumber, spaceId);
@@ -216,6 +231,9 @@ public class ParkingEventService {
         result.put("action", "IN");
         result.put("spaceId", spaceId);
         result.put("spaceCode", space.getSpaceCode());
+        result.put("ownerName", ownerName);
+        result.put("speakerId", space.getSpeakerId());
+        result.put("announceText", announceText);
         log.info("[进场-完成] {}", JSON.toJSONString(result));
         return result;
     }

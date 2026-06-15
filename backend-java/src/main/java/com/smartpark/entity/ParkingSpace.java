@@ -12,6 +12,7 @@ public class ParkingSpace implements Serializable {
     private Integer yPos;
     private Integer width;
     private Integer height;
+    private String speakerId;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -31,4 +32,6 @@ public class ParkingSpace implements Serializable {
     public void setWidth(Integer width) { this.width = width; }
     public Integer getHeight() { return height; }
     public void setHeight(Integer height) { this.height = height; }
+    public String getSpeakerId() { return speakerId; }
+    public void setSpeakerId(String speakerId) { this.speakerId = speakerId; }
 }

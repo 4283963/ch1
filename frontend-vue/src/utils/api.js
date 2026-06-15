@@ -58,6 +58,14 @@ export const updateSpaceStatusApi = (spaceId, status) => {
   return request.put(`/spaces/${spaceId}/status`, { status })
 }
 
+export const updateSpace = (id, data) => {
+  return request.put(`/spaces/${id}`, data)
+}
+
+export const getSpaceById = (id) => {
+  return request.get(`/spaces/${id}`)
+}
+
 export const getRecords = () => {
   return request.get('/access-records')
 }

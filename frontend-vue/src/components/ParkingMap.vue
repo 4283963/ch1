@@ -106,6 +106,48 @@ const drawSpace = (space, scale, offsetX, offsetY) => {
   ctx.font = `${Math.max(10, Math.min(w, h) * 0.18)}px sans-serif`
   ctx.fillStyle = space.status === 'guiding' ? '#a7f3d0' : space.status === 'occupied' ? '#93c5fd' : '#9ca3af'
   ctx.fillText(statusText, x + w / 2, y + h * 0.75)
+
+  if (space.announcing) {
+    const announcePulse = 0.5 + 0.5 * Math.sin(pulsePhase * 2)
+    const iconSize = Math.max(14, Math.min(w, h) * 0.22)
+    const iconX = x + w - iconSize * 0.7
+    const iconY = y + iconSize * 0.7
+
+    const glow = ctx.createRadialGradient(iconX, iconY, 0, iconX, iconY, iconSize * 1.5)
+    glow.addColorStop(0, `rgba(239, 68, 68, ${0.5 + announcePulse * 0.4})`)
+    glow.addColorStop(1, 'rgba(239, 68, 68, 0)')
+    ctx.fillStyle = glow
+    ctx.beginPath()
+    ctx.arc(iconX, iconY, iconSize * 1.5, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.fillStyle = `rgba(239, 68, 68, ${0.7 + announcePulse * 0.3})`
+    ctx.beginPath()
+    ctx.moveTo(iconX - iconSize * 0.4, iconY - iconSize * 0.2)
+    ctx.lineTo(iconX + iconSize * 0.15, iconY - iconSize * 0.45)
+    ctx.lineTo(iconX + iconSize * 0.15, iconY + iconSize * 0.45)
+    ctx.lineTo(iconX - iconSize * 0.4, iconY + iconSize * 0.2)
+    ctx.closePath()
+    ctx.fill()
+
+    ctx.fillStyle = `rgba(239, 68, 68, ${0.85 + announcePulse * 0.15})`
+    ctx.fillRect(iconX - iconSize * 0.5, iconY - iconSize * 0.18, iconSize * 0.18, iconSize * 0.36)
+
+    for (let i = 0; i < 2; i++) {
+      const waveAmp = 0.25 + announcePulse * 0.15
+      const waveOffset = iconSize * (0.35 + i * 0.2)
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.7 + announcePulse * 0.3})`
+      ctx.lineWidth = Math.max(1.5, iconSize * 0.08)
+      ctx.beginPath()
+      ctx.arc(iconX + iconSize * 0.15, iconY, waveOffset, -Math.PI * waveAmp, Math.PI * waveAmp)
+      ctx.stroke()
+    }
+
+    ctx.font = `bold ${Math.max(9, Math.min(w, h) * 0.14)}px sans-serif`
+    ctx.fillStyle = '#fecaca'
+    ctx.textAlign = 'center'
+    ctx.fillText('语音播报中', x + w / 2, y + h * 0.92)
+  }
 }
 
 const roundRect = (ctx, x, y, w, h, r) => {

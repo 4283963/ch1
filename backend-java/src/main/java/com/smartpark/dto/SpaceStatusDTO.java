@@ -11,6 +11,9 @@ public class SpaceStatusDTO {
     private Integer width;
     private Integer height;
     private String name;
+    private String speakerId;
+    private Boolean announcing;
+    private String announceText;
 
     public SpaceStatusDTO() {
         this.type = "space_update";
@@ -60,4 +63,10 @@ public class SpaceStatusDTO {
     public void setHeight(Integer height) { this.height = height; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+    public String getSpeakerId() { return speakerId; }
+    public void setSpeakerId(String speakerId) { this.speakerId = speakerId; }
+    public Boolean getAnnouncing() { return announcing; }
+    public void setAnnouncing(Boolean announcing) { this.announcing = announcing; }
+    public String getAnnounceText() { return announceText; }
+    public void setAnnounceText(String announceText) { this.announceText = announceText; }
 }
