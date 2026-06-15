@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -14,37 +15,230 @@ import (
 	"github.com/gorilla/mux"
 )
 
+const (
+	commandQueueSize    = 16
+	anchorCooldownMs    = 2000
+	tcpWriteTimeoutSec  = 5
+	tcpReadTimeoutSec   = 5
+	tcpHeartbeatSec     = 60
+)
+
+type commandItem struct {
+	cmd     string
+	ackChan chan error
+}
+
+type AnchorConnection struct {
+	spaceId         string
+	conn            net.Conn
+	writer          *bufio.Writer
+	reader          *bufio.Reader
+	cmdQueue        chan commandItem
+	lastCmdTime     int64
+	lastCmd         string
+	pendingCmdCount int
+	closeChan       chan struct{}
+	writeMu         sync.Mutex
+	workerMu        sync.Mutex
+	workerRunning   bool
+}
+
+func NewAnchorConnection(spaceId string, conn net.Conn) *AnchorConnection {
+	return &AnchorConnection{
+		spaceId:   spaceId,
+		conn:      conn,
+		writer:    bufio.NewWriterSize(conn, 128),
+		reader:    bufio.NewReaderSize(conn, 128),
+		cmdQueue:  make(chan commandItem, commandQueueSize),
+		closeChan: make(chan struct{}),
+	}
+}
+
+func (a *AnchorConnection) StartWorker() {
+	a.workerMu.Lock()
+	if a.workerRunning {
+		a.workerMu.Unlock()
+		return
+	}
+	a.workerRunning = true
+	a.workerMu.Unlock()
+
+	go a.commandWorker()
+	log.Printf("[Worker] 地锚 %s 指令消费协程已启动", a.spaceId)
+}
+
+func (a *AnchorConnection) Stop() {
+	select {
+	case <-a.closeChan:
+		return
+	default:
+		close(a.closeChan)
+	}
+	a.conn.Close()
+}
+
+func (a *AnchorConnection) commandWorker() {
+	defer func() {
+		a.workerMu.Lock()
+		a.workerRunning = false
+		a.workerMu.Unlock()
+		log.Printf("[Worker] 地锚 %s 指令消费协程已退出", a.spaceId)
+	}()
+
+	for {
+		select {
+		case <-a.closeChan:
+			return
+
+		case item, ok := <-a.cmdQueue:
+			if !ok {
+				return
+			}
+			err := a.executeCommand(item.cmd)
+			if item.ackChan != nil {
+				select {
+				case item.ackChan <- err:
+				case <-a.closeChan:
+				}
+			}
+			a.lastCmdTime = time.Now().UnixMilli()
+			a.lastCmd = item.cmd
+		}
+	}
+}
+
+func (a *AnchorConnection) executeCommand(cmd string) error {
+	a.writeMu.Lock()
+	defer a.writeMu.Unlock()
+
+	log.Printf("[TCP] 地锚 %s 执行指令: %s", a.spaceId, cmd)
+
+	if err := a.conn.SetWriteDeadline(time.Now().Add(tcpWriteTimeoutSec * time.Second)); err != nil {
+		log.Printf("[TCP] 地锚 %s 设置写超时失败: %v", a.spaceId, err)
+	}
+
+	if _, err := a.writer.WriteString(cmd + "\n"); err != nil {
+		log.Printf("[TCP] 地锚 %s 写入指令失败: %v", a.spaceId, err)
+		a.writer.Reset(a.conn)
+		return err
+	}
+
+	if err := a.writer.Flush(); err != nil {
+		log.Printf("[TCP] 地锚 %s Flush失败: %v", a.spaceId, err)
+		return err
+	}
+
+	if err := a.conn.SetReadDeadline(time.Now().Add(tcpReadTimeoutSec * time.Second)); err != nil {
+		log.Printf("[TCP] 地锚 %s 设置读超时失败: %v", a.spaceId, err)
+	}
+
+	resp, err := a.reader.ReadString('\n')
+	if err != nil {
+		log.Printf("[TCP] 地锚 %s 读取ACK失败: %v", a.spaceId, err)
+		return err
+	}
+
+	resp = strings.TrimSpace(resp)
+	if resp != "ACK:OK" {
+		log.Printf("[TCP] 地锚 %s 返回异常: %q (期望 ACK:OK)", a.spaceId, resp)
+		return errors.New("地锚返回异常: " + resp)
+	}
+
+	log.Printf("[TCP] 地锚 %s 指令 %s 执行成功 (ACK:OK)", a.spaceId, cmd)
+	return nil
+}
+
+func (a *AnchorConnection) EnqueueCommand(cmd string, waitAck bool) error {
+	a.writeMu.Lock()
+	lastTime := a.lastCmdTime
+	lastCmd := a.lastCmd
+	pending := len(a.cmdQueue)
+	a.writeMu.Unlock()
+
+	now := time.Now().UnixMilli()
+	if lastTime > 0 && (now-lastTime) < anchorCooldownMs {
+		remain := anchorCooldownMs - (now - lastTime)
+		log.Printf("[队列-冷却] 地锚 %s 距上次指令仅%dms，冷却拒绝(剩%dms)",
+			a.spaceId, now-lastTime, remain)
+		return fmt.Errorf("液压泵冷却中，请%dms后重试(防止电机过载)", remain)
+	}
+
+	if pending > 0 && lastCmd == cmd {
+		log.Printf("[队列-去抖] 地锚 %s 队列中已有相同指令[%s](待执行%d条)，合并跳过",
+			a.spaceId, cmd, pending)
+		return fmt.Errorf("队列中已有相同指令，已合并去抖")
+	}
+
+	if len(a.cmdQueue) >= commandQueueSize {
+		log.Printf("[队列-满] 地锚 %s 指令队列已满(size=%d)，拒绝新指令", a.spaceId, commandQueueSize)
+		return errors.New("地锚指令队列已满，请稍后重试")
+	}
+
+	a.StartWorker()
+
+	var ackChan chan error
+	if waitAck {
+		ackChan = make(chan error, 1)
+	}
+
+	select {
+	case a.cmdQueue <- commandItem{cmd: cmd, ackChan: ackChan}:
+		log.Printf("[队列-入队] 地锚 %s 指令 %s 入队成功(队列长度=%d)",
+			a.spaceId, cmd, len(a.cmdQueue))
+	default:
+		log.Printf("[队列-满] 地锚 %s 入队失败，channel已满", a.spaceId)
+		return errors.New("地锚繁忙，请稍后重试")
+	}
+
+	if waitAck {
+		select {
+		case err := <-ackChan:
+			return err
+		case <-time.After((tcpWriteTimeoutSec + tcpReadTimeoutSec + 2) * time.Second):
+			log.Printf("[队列-超时] 地锚 %s 指令 %s 等待ACK超时", a.spaceId, cmd)
+			return errors.New("地锚响应超时")
+		case <-a.closeChan:
+			return errors.New("地锚连接已断开")
+		}
+	}
+	return nil
+}
+
 type AnchorPool struct {
 	mu    sync.RWMutex
-	conns map[string]net.Conn
+	conns map[string]*AnchorConnection
 }
 
 func NewAnchorPool() *AnchorPool {
 	return &AnchorPool{
-		conns: make(map[string]net.Conn),
+		conns: make(map[string]*AnchorConnection),
 	}
 }
 
-func (p *AnchorPool) Add(spaceId string, conn net.Conn) {
+func (p *AnchorPool) Add(spaceId string, ac *AnchorConnection) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if oldConn, exists := p.conns[spaceId]; exists {
-		oldConn.Close()
+	if old, exists := p.conns[spaceId]; exists {
+		log.Printf("[Pool] 地锚 %s 重复注册，关闭旧连接", spaceId)
+		old.Stop()
 	}
-	p.conns[spaceId] = conn
+	p.conns[spaceId] = ac
 }
 
 func (p *AnchorPool) Remove(spaceId string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	delete(p.conns, spaceId)
+	if ac, ok := p.conns[spaceId]; ok {
+		ac.Stop()
+		delete(p.conns, spaceId)
+	}
 }
 
-func (p *AnchorPool) Get(spaceId string) (net.Conn, bool) {
+func (p *AnchorPool) Get(spaceId string) (*AnchorConnection, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	conn, ok := p.conns[spaceId]
-	return conn, ok
+	ac, ok := p.conns[spaceId]
+	return ac, ok
 }
 
 func (p *AnchorPool) Status() map[string]bool {
@@ -55,6 +249,20 @@ func (p *AnchorPool) Status() map[string]bool {
 		status[id] = true
 	}
 	return status
+}
+
+func (p *AnchorPool) QueueStatus() map[string]interface{} {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	result := make(map[string]interface{}, len(p.conns))
+	for id, ac := range p.conns {
+		result[id] = map[string]interface{}{
+			"queueLen":    len(ac.cmdQueue),
+			"lastCmd":     ac.lastCmd,
+			"lastCmdTime": ac.lastCmdTime,
+		}
+	}
+	return result
 }
 
 type AnchorHandler struct {
@@ -94,65 +302,43 @@ func (h *AnchorHandler) sendCommand(w http.ResponseWriter, r *http.Request, cmd 
 	}
 	defer r.Body.Close()
 
-	if strings.TrimSpace(req.SpaceId) == "" {
+	spaceId := strings.TrimSpace(req.SpaceId)
+	if spaceId == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: "spaceId 不能为空"})
 		return
 	}
 
-	conn, ok := h.pool.Get(req.SpaceId)
+	ac, ok := h.pool.Get(spaceId)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: fmt.Sprintf("车位 %s 的地锚不在线", req.SpaceId)})
+		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: fmt.Sprintf("车位 %s 的地锚不在线", spaceId)})
 		return
 	}
 
-	if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		log.Printf("[TCP] 设置写入超时失败: %v", err)
-	}
-
-	if _, err := fmt.Fprintf(conn, "%s\n", cmd); err != nil {
-		h.pool.Remove(req.SpaceId)
-		conn.Close()
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: fmt.Sprintf("发送指令失败: %v", err)})
-		return
-	}
-
-	reader := bufio.NewReader(conn)
-	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		log.Printf("[TCP] 设置读取超时失败: %v", err)
-	}
-
-	resp, err := reader.ReadString('\n')
+	err := ac.EnqueueCommand(cmd, true)
 	if err != nil {
-		h.pool.Remove(req.SpaceId)
-		conn.Close()
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: fmt.Sprintf("等待ACK超时或失败: %v", err)})
-		return
-	}
-
-	resp = strings.TrimSpace(resp)
-	if resp != "ACK:OK" {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: fmt.Sprintf("地锚返回异常: %s", resp)})
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(APIResponse{Success: false, Message: err.Error()})
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{Success: true, Message: fmt.Sprintf("%s 指令发送成功", cmd)})
+	json.NewEncoder(w).Encode(APIResponse{Success: true, Message: fmt.Sprintf("%s 指令执行成功", cmd)})
 }
 
 func (h *AnchorHandler) HandleAnchorStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	status := h.pool.Status()
+	queues := h.pool.QueueStatus()
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Data: map[string]interface{}{
-			"total":  len(status),
-			"online": status,
+			"total":    len(status),
+			"online":   status,
+			"queues":   queues,
+			"cooldown": fmt.Sprintf("%dms/指令", anchorCooldownMs),
 		},
 	})
 }
@@ -179,7 +365,8 @@ func (s *TCPServer) Start() error {
 	}
 	defer listener.Close()
 
-	log.Printf("[TCP] 服务启动，监听端口 %s", s.addr)
+	log.Printf("[TCP] 服务启动，监听端口 %s (指令冷却%dms/队列容量%d)",
+		s.addr, anchorCooldownMs, commandQueueSize)
 
 	for {
 		conn, err := listener.Accept()
@@ -231,20 +418,21 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 		return
 	}
 
+	ac := NewAnchorConnection(spaceId, conn)
+
 	s.connMu.Lock()
 	s.connMap[conn] = spaceId
 	s.connMu.Unlock()
-	s.pool.Add(spaceId, conn)
+	s.pool.Add(spaceId, ac)
 
-	log.Printf("[TCP] 地锚 %s 注册成功 (来自 %s)", spaceId, conn.RemoteAddr())
+	ac.reader = reader
+	ac.StartWorker()
 
-	if err := conn.SetReadDeadline(time.Time{}); err != nil {
-		log.Printf("[TCP] 清除读取超时失败: %v", err)
-	}
+	log.Printf("[TCP] 地锚 %s 注册成功 (来自 %s)，指令协程已启动", spaceId, conn.RemoteAddr())
 
 	for {
-		if err := conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
-			log.Printf("[TCP] 设置心跳超时失败: %v", err)
+		if err := conn.SetReadDeadline(time.Now().Add(tcpHeartbeatSec * time.Second)); err != nil {
+			log.Printf("[TCP] 地锚 %s 设置心跳超时失败: %v", spaceId, err)
 			return
 		}
 
@@ -253,6 +441,7 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				continue
 			}
+			log.Printf("[TCP] 地锚 %s 读循环退出: %v", spaceId, err)
 			return
 		}
 
@@ -262,17 +451,20 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 		}
 
 		if line == "PING" {
-			if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
-				log.Printf("[TCP] 设置写入超时失败: %v", err)
+			ac.writeMu.Lock()
+			if err := conn.SetWriteDeadline(time.Now().Add(tcpWriteTimeoutSec * time.Second)); err != nil {
+				log.Printf("[TCP] 地锚 %s 设置写超时失败: %v", spaceId, err)
 			}
-			if _, err := fmt.Fprintf(conn, "PONG\n"); err != nil {
-				log.Printf("[TCP] 发送PONG失败: %v", err)
+			if _, werr := fmt.Fprintf(conn, "PONG\n"); werr != nil {
+				log.Printf("[TCP] 地锚 %s 发送PONG失败: %v", spaceId, werr)
+				ac.writeMu.Unlock()
 				return
 			}
+			ac.writeMu.Unlock()
 			continue
 		}
 
-		log.Printf("[TCP] 收到地锚 %s 消息: %s", spaceId, line)
+		log.Printf("[TCP] 收到地锚 %s 主动上报: %s", spaceId, line)
 	}
 }
 

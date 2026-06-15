@@ -51,6 +51,10 @@
         UPDATE parking_space SET status = #{status} WHERE id = #{id}
     </update>
 
+    <update id="updateStatusWithExpect">
+        UPDATE parking_space SET status = #{status} WHERE id = #{id} AND status = #{expectStatus}
+    </update>
+
     <select id="selectBySpaceCode" resultMap="ParkingSpaceMap">
         SELECT * FROM parking_space WHERE space_code = #{spaceCode}
     </select>

@@ -37,6 +37,10 @@ public class ParkingSpaceService {
         return parkingSpaceMapper.updateStatus(id, status);
     }
 
+    public int updateStatusWithExpect(Long id, Integer status, Integer expectStatus) {
+        return parkingSpaceMapper.updateStatusWithExpect(id, status, expectStatus);
+    }
+
     public ParkingSpace selectBySpaceCode(String spaceCode) {
         return parkingSpaceMapper.selectBySpaceCode(spaceCode);
     }

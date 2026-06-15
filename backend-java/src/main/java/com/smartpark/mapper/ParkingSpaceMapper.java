@@ -14,5 +14,6 @@ public interface ParkingSpaceMapper {
     ParkingSpace selectById(@Param("id") Long id);
     List<ParkingSpace> selectAll();
     int updateStatus(@Param("id") Long id, @Param("status") Integer status);
+    int updateStatusWithExpect(@Param("id") Long id, @Param("status") Integer status, @Param("expectStatus") Integer expectStatus);
     ParkingSpace selectBySpaceCode(@Param("spaceCode") String spaceCode);
 }
